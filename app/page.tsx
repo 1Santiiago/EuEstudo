@@ -198,6 +198,8 @@ export default function Home() {
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [loginError, setLoginError] = useState("");
+  const [loginMessage, setLoginMessage] = useState("");
+  const [resendingConfirmation, setResendingConfirmation] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [syncError, setSyncError] = useState("");
   const [installPrompt, setInstallPrompt] = useState<InstallPromptEvent | null>(null);
@@ -229,6 +231,12 @@ export default function Home() {
 
   useEffect(() => {
     const client = getSupabaseBrowserClient();
+    const hashParams = new URLSearchParams(window.location.hash.slice(1));
+    const authError = hashParams.get("error_code");
+    if (authError === "otp_expired") {
+      setLoginError("O link expirou ou já foi usado. Informe seu e-mail e solicite uma nova confirmação.");
+      window.history.replaceState({}, "", `${window.location.pathname}${window.location.search}`);
+    }
     if (!client) {
       setLoginError("Configure NEXT_PUBLIC_SUPABASE_URL e NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY para habilitar sua conta.");
       setAuthReady(true);
@@ -454,6 +462,7 @@ export default function Home() {
       return;
     }
     setLoginError("");
+    setLoginMessage("");
     const email = loginEmail.trim();
     const result = isSignUp
       ? await client.auth.signUp({ email, password: loginPassword, options: { emailRedirectTo: window.location.origin } })
@@ -464,8 +473,29 @@ export default function Home() {
     }
     setLoginPassword("");
     if (isSignUp && !result.data.session) {
-      setLoginError("Conta criada. Confira seu e-mail para confirmar o cadastro e depois entre.");
+      setIsSignUp(false);
+      setLoginMessage("Conta criada. Confira seu e-mail para confirmar. Se o link vencer, você pode solicitar outro abaixo.");
     }
+  }
+  async function resendConfirmation() {
+    const email = loginEmail.trim();
+    if (!email) {
+      setLoginError("Informe seu e-mail para reenviar a confirmação.");
+      return;
+    }
+    const client = getSupabaseBrowserClient();
+    if (!client) return;
+    setLoginError("");
+    setLoginMessage("");
+    setResendingConfirmation(true);
+    const { error } = await client.auth.resend({
+      type: "signup",
+      email,
+      options: { emailRedirectTo: window.location.origin },
+    });
+    setResendingConfirmation(false);
+    if (error) setLoginError(error.message);
+    else setLoginMessage("Novo link enviado. Abra o e-mail mais recente para confirmar sua conta.");
   }
   async function logout() {
     await getSupabaseBrowserClient()?.auth.signOut();
@@ -502,8 +532,10 @@ export default function Home() {
             <label>E-mail<div className="login-input"><Mail /><input type="email" autoComplete="email" required value={loginEmail} onChange={(event) => setLoginEmail(event.target.value)} placeholder="voce@exemplo.com" /></div></label>
             <label>Senha<div className="login-input"><LockKeyhole /><input type={showPassword ? "text" : "password"} autoComplete={isSignUp ? "new-password" : "current-password"} minLength={6} required value={loginPassword} onChange={(event) => setLoginPassword(event.target.value)} placeholder="Sua senha" /><button type="button" aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"} onClick={() => setShowPassword((value) => !value)}>{showPassword ? <EyeOff /> : <Eye />}</button></div></label>
             {loginError && <p className="login-error" role="alert">{loginError}</p>}
+            {loginMessage && <p className="login-message" role="status">{loginMessage}</p>}
             <Button type="submit" size="lg" className="login-button">{isSignUp ? "Criar conta" : "Entrar"} <ChevronRight /></Button>
           </form>
+          {!isSignUp && <button type="button" className="login-footnote login-toggle" onClick={resendConfirmation} disabled={resendingConfirmation}>{resendingConfirmation ? "Enviando…" : "Reenviar confirmação de e-mail"}</button>}
           <button type="button" className="login-footnote login-toggle" onClick={() => { setIsSignUp((value) => !value); setLoginError(""); }}>{isSignUp ? "Já tem uma conta? Entrar" : "Ainda não tem uma conta? Criar conta"}</button>
           <p className="login-footnote">Se a confirmação de e-mail estiver ativa, confirme o cadastro antes de entrar.</p>
         </section>
